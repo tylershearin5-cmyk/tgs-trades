@@ -598,26 +598,39 @@ function calcTotalExpenses() { return expenses.reduce((s,e)=>s+e.amount, 0); }
 // ============================================================
 function calcTotals() {
   const own = calcOwnership();
-  let shawnBal=STARTING.shawn, grandadBal=STARTING.grandad, tylerTradeBal=STARTING.tyler, tylerComm=0;
 
+  // Trade P&L only (deposits not counted as profit)
+  let shawnPnl=0, grandadPnl=0, tylerTradePnl=0, tylerComm=0;
   trades.forEach(t => {
     const c = calcTrade(t.pnl, t.target||'all', own);
-    shawnBal      += c.shawnNet;
-    grandadBal    += c.grandadNet;
-    tylerTradeBal += c.tylerNet;
+    shawnPnl      += c.shawnNet;
+    grandadPnl    += c.grandadNet;
+    tylerTradePnl += c.tylerNet;
     tylerComm     += c.tylerComm;
   });
 
   const dep = calcDepositTotals();
-  shawnBal      += dep.shawn   || 0;
-  grandadBal    += dep.grandad || 0;
-  tylerTradeBal += dep.tyler   || 0;
+  const totalExp = calcTotalExpenses();
 
-  const totalExp    = calcTotalExpenses();
-  const tylerNet    = tylerTradeBal + tylerComm - totalExp;
-  const fundTotal   = shawnBal + grandadBal + tylerNet;
+  // Balances include deposits but P&L figures do not
+  const shawnBal   = STARTING.shawn   + shawnPnl   + (dep.shawn   || 0);
+  const grandadBal = STARTING.grandad + grandadPnl + (dep.grandad || 0);
+  const tylerNet   = STARTING.tyler   + tylerTradePnl + tylerComm + (dep.tyler || 0) - totalExp;
+  const fundTotal  = shawnBal + grandadBal + tylerNet;
 
-  return { shawn:shawnBal, grandad:grandadBal, tylerTrade:tylerTradeBal, tylerComm, totalExp, tylerNet, fundTotal };
+  // Pure trade P&L (no deposits, no expenses except tyler)
+  const shawnPnlTotal   = shawnPnl;
+  const grandadPnlTotal = grandadPnl;
+  const tylerPnlTotal   = tylerTradePnl + tylerComm - totalExp;
+  const fundPnlTotal    = shawnPnlTotal + grandadPnlTotal + tylerPnlTotal;
+
+  return {
+    shawn: shawnBal, grandad: grandadBal,
+    tylerTrade: STARTING.tyler + tylerTradePnl + (dep.tyler||0),
+    tylerComm, totalExp, tylerNet, fundTotal,
+    shawnPnl: shawnPnlTotal, grandadPnl: grandadPnlTotal,
+    tylerPnl: tylerPnlTotal, fundPnl: fundPnlTotal
+  };
 }
 
 // ============================================================
@@ -647,22 +660,22 @@ function renderFundSetup() {
   const totals = calcTotals();
 
   const members = [
-    { key:'shawn',   label:'Shawn',   pct:own.shawn,   cls:'shawn-card',   live:totals.shawn   },
-    { key:'grandad', label:'Grandad', pct:own.grandad, cls:'grandad-card', live:totals.grandad },
-    { key:'tyler',   label:'Tyler',   pct:own.tyler,   cls:'tyler-card',   live:totals.tylerNet }
+    { key:'shawn',   label:'Shawn',   pct:own.shawn,   cls:'shawn-card',   live:totals.shawn,   pnl:totals.shawnPnl   },
+    { key:'grandad', label:'Grandad', pct:own.grandad, cls:'grandad-card', live:totals.grandad, pnl:totals.grandadPnl },
+    { key:'tyler',   label:'Tyler',   pct:own.tyler,   cls:'tyler-card',   live:totals.tylerNet,pnl:totals.tylerPnl   }
   ];
 
   document.getElementById('fundGrid').innerHTML = members.map(m => {
-    const change = m.live - STARTING[m.key];
-    const ret    = fmtRet(m.live, STARTING[m.key]);
-    const chCls  = colorClass(change);
-    const chSign = change >= 0 ? '+' : '';
+    const chCls  = colorClass(m.pnl);
+    const chSign = m.pnl >= 0 ? '+' : '';
+    const retPct = (m.pnl / STARTING[m.key] * 100);
+    const retStr = (retPct >= 0 ? '+' : '') + retPct.toFixed(2) + '%';
     return `
       <div class="member-card ${m.cls}">
         <div class="member-name">${m.label}</div>
         <div class="member-amount">${fmt(m.live)}</div>
         <div class="member-sub">Started at ${fmt(STARTING[m.key])} · ${fmtPct(m.pct)} ownership</div>
-        <div class="member-change ${chCls}">${chSign}${fmt(change)} &nbsp;(${ret})</div>
+        <div class="member-change ${chCls}">${chSign}${fmt(m.pnl)} trading P&L &nbsp;(${retStr})</div>
         <div class="progress-bar"><div class="progress-fill" style="width:${m.pct*100}%"></div></div>
       </div>`;
   }).join('');
@@ -792,14 +805,17 @@ function renderDashboard() {
 
   // ---- FUND OVERVIEW ----
   if (person === 'all') {
-    const fundPnl = totals.fundTotal - own.total;
-    const stats   = calcTradeStats('all');
+    const stats = calcTradeStats('all');
+    const tylerRetPct = (totals.tylerPnl / STARTING.tyler * 100);
+    const tylerRetStr = (tylerRetPct >= 0 ? '+' : '') + tylerRetPct.toFixed(2) + '%';
+    const fundRetPct  = (totals.fundPnl / own.total * 100);
+    const fundRetStr  = (fundRetPct >= 0 ? '+' : '') + fundRetPct.toFixed(2) + '%';
 
     grid.innerHTML = [
-      { label:"Tyler's Commission",  value: totals.tylerComm, cls:'commission-val', sub:`${trades.length} trade${trades.length!==1?'s':''} total` },
+      { label:"Tyler's Commission",  value: totals.tylerComm,  cls:'commission-val', sub:`${trades.length} trade${trades.length!==1?'s':''} total` },
       { label:"Tyler's Expenses",    value: -totals.totalExp,  cls:'expense-val',    sub:`${expenses.length} logged` },
-      { label:"Tyler's Net Total",   value: totals.tylerNet,   cls: colorClass(totals.tylerNet-STARTING.tyler), sub:`${fmtRet(totals.tylerNet,STARTING.tyler)} return`, highlight:true },
-      { label:'Total Fund P&L',       value: fundPnl,           cls: colorClass(fundPnl), sub:`vs ${fmt(own.total)} starting`, highlight:true },
+      { label:"Tyler's Trading P&L", value: totals.tylerPnl,   cls: colorClass(totals.tylerPnl), sub:`${tylerRetStr} return on trades`, highlight:true },
+      { label:'Total Fund P&L',      value: totals.fundPnl,    cls: colorClass(totals.fundPnl),  sub:`${fundRetStr} return · deposits excluded`, highlight:true },
     ].map(c=>`
       <div class="stat-card${c.highlight?' highlight':''}">
         <div class="stat-label">${c.label}</div>
@@ -811,14 +827,15 @@ function renderDashboard() {
 
   // ---- SHAWN ----
   } else if (person === 'shawn') {
-    const change  = totals.shawn - STARTING.shawn;
     const stats   = calcTradeStats('shawn');
     const trCount = trades.filter(t => t.target==='shawn' || t.target==='all').length;
+    const retPct  = (totals.shawnPnl / STARTING.shawn * 100);
+    const retStr  = (retPct >= 0 ? '+' : '') + retPct.toFixed(2) + '%';
 
     grid.innerHTML = [
-      { label:"Shawn's Balance",      value: totals.shawn,         cls: colorClass(change),  sub:`${fmtRet(totals.shawn, STARTING.shawn)} return`, highlight:true },
-      { label:'Total P&L',             value: change,               cls: colorClass(change),  sub:`vs ${fmt(STARTING.shawn)} starting` },
-      { label:'Commission Paid Out',   value: -stats.totalComm,     cls:'commission-val',     sub:'18% on profits → Tyler' },
+      { label:"Shawn's Balance",     value: totals.shawn,      cls: colorClass(totals.shawnPnl), sub:`${retStr} return on trades`, highlight:true },
+      { label:'Trading P&L',          value: totals.shawnPnl,   cls: colorClass(totals.shawnPnl), sub:'deposits not included' },
+      { label:'Commission Paid Out',  value: -stats.totalComm,  cls:'commission-val',             sub:'18% on profits → Tyler' },
     ].map(c=>`
       <div class="stat-card${c.highlight?' highlight':''}">
         <div class="stat-label">${c.label}</div>
@@ -830,14 +847,15 @@ function renderDashboard() {
 
   // ---- GRANDAD ----
   } else if (person === 'grandad') {
-    const change  = totals.grandad - STARTING.grandad;
     const stats   = calcTradeStats('grandad');
     const trCount = trades.filter(t => t.target==='grandad' || t.target==='all').length;
+    const retPct  = (totals.grandadPnl / STARTING.grandad * 100);
+    const retStr  = (retPct >= 0 ? '+' : '') + retPct.toFixed(2) + '%';
 
     grid.innerHTML = [
-      { label:"Grandad's Balance",    value: totals.grandad,       cls: colorClass(change),  sub:`${fmtRet(totals.grandad, STARTING.grandad)} return`, highlight:true },
-      { label:'Total P&L',             value: change,               cls: colorClass(change),  sub:`vs ${fmt(STARTING.grandad)} starting` },
-      { label:'Commission Paid Out',   value: -stats.totalComm,     cls:'commission-val',     sub:'50% on profits → Tyler' },
+      { label:"Grandad's Balance",   value: totals.grandad,    cls: colorClass(totals.grandadPnl), sub:`${retStr} return on trades`, highlight:true },
+      { label:'Trading P&L',          value: totals.grandadPnl, cls: colorClass(totals.grandadPnl), sub:'deposits not included' },
+      { label:'Commission Paid Out',  value: -stats.totalComm,  cls:'commission-val',               sub:'50% on profits → Tyler' },
     ].map(c=>`
       <div class="stat-card${c.highlight?' highlight':''}">
         <div class="stat-label">${c.label}</div>
@@ -849,15 +867,16 @@ function renderDashboard() {
 
   // ---- TYLER ----
   } else if (person === 'tyler') {
-    const change  = totals.tylerNet - STARTING.tyler;
     const stats   = calcTradeStats('tyler');
     const trCount = trades.filter(t => t.target==='tyler' || t.target==='all').length;
+    const retPct  = (totals.tylerPnl / STARTING.tyler * 100);
+    const retStr  = (retPct >= 0 ? '+' : '') + retPct.toFixed(2) + '%';
 
     grid.innerHTML = [
-      { label:"Tyler's Net Total",    value: totals.tylerNet,      cls: colorClass(change),    sub:`${fmtRet(totals.tylerNet, STARTING.tyler)} return`, highlight:true },
-      { label:'Trading P&L',           value: totals.tylerTrade - STARTING.tyler, cls: colorClass(totals.tylerTrade - STARTING.tyler), sub:'from trades only' },
-      { label:'Commission Earned',     value: totals.tylerComm,     cls:'commission-val',       sub:'from Shawn + Grandad' },
-      { label:'Expenses Deducted',     value: -totals.totalExp,     cls:'expense-val',          sub:`${expenses.length} expense${expenses.length!==1?'s':''}` },
+      { label:"Tyler's Net Total",   value: totals.tylerNet,   cls: colorClass(totals.tylerPnl),  sub:`${retStr} return on trades`, highlight:true },
+      { label:'Trading P&L',          value: totals.tylerPnl,   cls: colorClass(totals.tylerPnl),  sub:'deposits not included' },
+      { label:'Commission Earned',    value: totals.tylerComm,  cls:'commission-val',              sub:'from Shawn + Grandad' },
+      { label:'Expenses Deducted',    value: -totals.totalExp,  cls:'expense-val',                 sub:`${expenses.length} expense${expenses.length!==1?'s':''}` },
     ].map(c=>`
       <div class="stat-card${c.highlight?' highlight':''}">
         <div class="stat-label">${c.label}</div>
