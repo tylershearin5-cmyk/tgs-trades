@@ -618,10 +618,10 @@ function calcTotals() {
   const tylerNet   = STARTING.tyler   + tylerTradePnl + tylerComm + (dep.tyler || 0) - totalExp;
   const fundTotal  = shawnBal + grandadBal + tylerNet;
 
-  // Pure trade P&L (no deposits, no expenses except tyler)
+  // Pure trade P&L (deposits and expenses excluded)
   const shawnPnlTotal   = shawnPnl;
   const grandadPnlTotal = grandadPnl;
-  const tylerPnlTotal   = tylerTradePnl + tylerComm - totalExp;
+  const tylerPnlTotal   = tylerTradePnl + tylerComm;
   const fundPnlTotal    = shawnPnlTotal + grandadPnlTotal + tylerPnlTotal;
 
   return {
@@ -815,7 +815,7 @@ function renderDashboard() {
       { label:"Tyler's Commission",  value: totals.tylerComm,  cls:'commission-val', sub:`${trades.length} trade${trades.length!==1?'s':''} total` },
       { label:"Tyler's Expenses",    value: -totals.totalExp,  cls:'expense-val',    sub:`${expenses.length} logged` },
       { label:"Tyler's Trading P&L", value: totals.tylerPnl,   cls: colorClass(totals.tylerPnl), sub:`${tylerRetStr} return on trades`, highlight:true },
-      { label:'Total Fund P&L',      value: totals.fundPnl,    cls: colorClass(totals.fundPnl),  sub:`${fundRetStr} return · deposits excluded`, highlight:true },
+      { label:'Total Fund P&L',      value: totals.fundPnl,    cls: colorClass(totals.fundPnl),  sub:`${fundRetStr} return · deposits & expenses excluded`, highlight:true },
     ].map(c=>`
       <div class="stat-card${c.highlight?' highlight':''}">
         <div class="stat-label">${c.label}</div>
@@ -874,7 +874,7 @@ function renderDashboard() {
 
     grid.innerHTML = [
       { label:"Tyler's Net Total",   value: totals.tylerNet,   cls: colorClass(totals.tylerPnl),  sub:`${retStr} return on trades`, highlight:true },
-      { label:'Trading P&L',          value: totals.tylerPnl,   cls: colorClass(totals.tylerPnl),  sub:'deposits not included' },
+      { label:'Trading P&L',          value: totals.tylerPnl,   cls: colorClass(totals.tylerPnl),  sub:'deposits & expenses excluded' },
       { label:'Commission Earned',    value: totals.tylerComm,  cls:'commission-val',              sub:'from Shawn + Grandad' },
       { label:'Expenses Deducted',    value: -totals.totalExp,  cls:'expense-val',                 sub:`${expenses.length} expense${expenses.length!==1?'s':''}` },
     ].map(c=>`
